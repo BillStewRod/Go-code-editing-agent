@@ -5,9 +5,13 @@ import (
 	"context"
 	"encoding/json"
 	"fmt"
+	"io"
 	"os"
+	"os/exec"
 	"path"
 	"path/filepath"
+	"sort"
+	"strconv"
 	"strings"
 
 	"github.com/anthropics/anthropic-sdk-go"
@@ -38,7 +42,7 @@ func main() {
 		return scanner.Text(), true
 	}
 
-	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition}
+	tools := []ToolDefinition{ReadFileDefinition, ListFilesDefinition, EditFileDefinition, OCRPDFDefinition}
 	agent := NewAgent(&client, getUserMessage, tools)
 	err := agent.Run(context.TODO())
 	if err != nil {
@@ -315,3 +319,145 @@ type EditFileInput struct {
 }
 
 var EditFileInputSchema = GenerateSchema[EditFileInput]()
+
+var OCRPDFDefinition = ToolDefinition{
+	Name:        "ocr_pdf",
+	Description: "Run OCR on a PDF using pdftoppm and tesseract. Requires both tools installed on the system.",
+	InputSchema: OCRPDFInputSchema,
+	Function:    OCRPDF,
+}
+
+type OCRPDFInput struct {
+	Path     string `json:"path" jsonschema_description:"Relative path to the PDF file."`
+	Lang     string `json:"lang,omitempty" jsonschema_description:"Tesseract language code (default: eng)."`
+	Dpi      int    `json:"dpi,omitempty" jsonschema_description:"Rasterization DPI for pdftoppm (default: 300)."`
+	MaxPages int    `json:"max_pages,omitempty" jsonschema_description:"Maximum pages to process (0 means all pages)."`
+}
+
+var OCRPDFInputSchema = GenerateSchema[OCRPDFInput]()
+
+func OCRPDF(input json.RawMessage) (string, error) {
+	ocrInput := OCRPDFInput{}
+	err := json.Unmarshal(input, &ocrInput)
+	if err != nil {
+		return "", err
+	}
+
+	if ocrInput.Path == "" {
+		return "", fmt.Errorf("path is required")
+	}
+
+	lang := ocrInput.Lang
+	if lang == "" {
+		lang = "eng"
+	}
+
+	dpi := ocrInput.Dpi
+	if dpi <= 0 {
+		dpi = 300
+	}
+
+	if _, err := execLookPath("pdftoppm"); err != nil {
+		return "", fmt.Errorf("pdftoppm not found in PATH")
+	}
+	if _, err := execLookPath("tesseract"); err != nil {
+		return "", fmt.Errorf("tesseract not found in PATH")
+	}
+
+	if _, err := os.Stat(ocrInput.Path); err != nil {
+		return "", err
+	}
+
+	tmpDir, err := os.MkdirTemp("", "ocr-pdf-*")
+	if err != nil {
+		return "", err
+	}
+	defer os.RemoveAll(tmpDir)
+
+	outputPrefix := filepath.Join(tmpDir, "page")
+	args := []string{"-png", "-r", strconv.Itoa(dpi)}
+	if ocrInput.MaxPages > 0 {
+		args = append(args, "-f", "1", "-l", strconv.Itoa(ocrInput.MaxPages))
+	}
+	args = append(args, ocrInput.Path, outputPrefix)
+
+	if err := runCommand("pdftoppm", args...); err != nil {
+		return "", err
+	}
+
+	images, err := filepath.Glob(filepath.Join(tmpDir, "page-*.png"))
+	if err != nil {
+		return "", err
+	}
+	if len(images) == 0 {
+		return "", fmt.Errorf("no pages rendered from PDF")
+	}
+	sort.Strings(images)
+
+	var output strings.Builder
+	for i, imagePath := range images {
+		text, err := runTesseract(imagePath, lang)
+		if err != nil {
+			return "", err
+		}
+		if i > 0 {
+			output.WriteString("\n\n--- Page ")
+			output.WriteString(strconv.Itoa(i + 1))
+			output.WriteString(" ---\n\n")
+		}
+		output.WriteString(text)
+	}
+
+	return strings.TrimSpace(output.String()), nil
+}
+
+func runTesseract(imagePath, lang string) (string, error) {
+	args := []string{imagePath, "stdout", "-l", lang}
+	return runCommandWithOutput("tesseract", args...)
+}
+
+func execLookPath(name string) (string, error) {
+	return exec.LookPath(name)
+}
+
+func runCommand(name string, args ...string) error {
+	_, err := runCommandWithOutput(name, args...)
+	return err
+}
+
+func runCommandWithOutput(name string, args ...string) (string, error) {
+	cmd := exec.Command(name, args...)
+	stdout, err := cmd.StdoutPipe()
+	if err != nil {
+		return "", err
+	}
+	stderr, err := cmd.StderrPipe()
+	if err != nil {
+		return "", err
+	}
+
+	if err := cmd.Start(); err != nil {
+		return "", err
+	}
+
+	stdoutBytes, stdoutErr := io.ReadAll(stdout)
+	stderrBytes, stderrErr := io.ReadAll(stderr)
+	waitErr := cmd.Wait()
+
+	if stdoutErr != nil {
+		return "", stdoutErr
+	}
+	if stderrErr != nil {
+		return "", stderrErr
+	}
+
+	if waitErr != nil {
+		message := strings.TrimSpace(string(stderrBytes))
+		if message == "" {
+			message = waitErr.Error()
+		}
+		return "", fmt.Errorf("%s", message)
+	}
+
+	return string(stdoutBytes), nil
+}

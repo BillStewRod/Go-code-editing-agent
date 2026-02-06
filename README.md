@@ -1,6 +1,6 @@
 # Go Code Editing Agent
 
-A fully functioning code-editing agent built in Go that uses Claude AI to interact with files and execute coding tasks.
+A ready-to-run coding agent built in Go that uses Claude AI to interact with files and execute coding tasks. OCR via Tesseract is included as an optional bonus.
 
 ## Overview
 
@@ -10,7 +10,7 @@ This project demonstrates how to build an AI agent capable of:
 - Creating new files and directories
 - Understanding and executing multi-step coding tasks
 
-Built following the tutorial from [How to Build an Agent](https://ampcode.com/notes/how-to-build-an-agent), this agent showcases how LLMs can be given "tools" to interact with the file system and perform real coding work.
+If you want a quick, out-of-the-box coding agent, this repo is the fastest path. If you want to learn how it works and how to build your own, the [How to Build an Agent](https://ampcode.com/notes/how-to-build-an-agent) guide explains it clearly and is highly recommended.
 
 ## Features
 
@@ -24,11 +24,94 @@ Built following the tutorial from [How to Build an Agent](https://ampcode.com/no
 - `read_file`: Read the contents of any file
 - `list_files`: List files and directories at a given path
 - `edit_file`: Make edits to text files using string replacement
+- `ocr_pdf`: OCR a PDF using `pdftoppm` + Tesseract (optional)
+
+### Working with Different Directories
+
+The agent can access files and directories anywhere on your system, not just the current working directory. You can use:
+
+**Relative paths:**
+- `../other-folder/file.txt` - Access parent directory
+- `subfolder/document.pdf` - Access subdirectory
+- `../../documents/report.pdf` - Navigate multiple levels
+
+**Absolute paths:**
+- `/home/username/documents/file.txt` (Linux/macOS)
+- `C:\Users\username\documents\file.txt` (Windows/WSL)
+
+**Examples:**
+```
+You: List files in /home/username/Documents
+You: Read the file at ../project/config.json
+You: OCR the PDF at /home/username/Downloads/invoice.pdf
+```
 
 ## Prerequisites
 
 - [Go](https://go.dev/) 1.24.1 or later
 - [Anthropic API key](https://console.anthropic.com/settings/keys)
+- Optional OCR: `tesseract` and `pdftoppm` (Poppler)
+
+### Installing OCR Dependencies (Optional)
+
+The OCR functionality requires two tools: `tesseract` (for text recognition) and `pdftoppm` (from Poppler, for PDF rendering). These are only needed if you want to use the `ocr_pdf` tool.
+
+#### Linux (Ubuntu/Debian/WSL)
+```bash
+sudo apt-get update
+sudo apt-get install poppler-utils tesseract-ocr
+```
+
+#### Linux (Fedora/RHEL/CentOS)
+```bash
+sudo dnf install poppler-utils tesseract
+```
+
+#### macOS
+Using Homebrew:
+```bash
+brew install poppler tesseract
+```
+
+If you don't have Homebrew installed:
+```bash
+/bin/bash -c "$(curl -fsSL https://raw.githubusercontent.com/Homebrew/install/HEAD/install.sh)"
+```
+
+#### Windows
+
+**Option 1: Using Chocolatey**
+```powershell
+choco install poppler tesseract
+```
+
+**Option 2: Manual Installation**
+1. **Poppler (pdftoppm):**
+   - Download from: https://github.com/oschwartz10612/poppler-windows/releases
+   - Extract and add the `bin` folder to your PATH
+
+2. **Tesseract:**
+   - Download from: https://github.com/UB-Mannheim/tesseract/wiki
+   - Install and add to your PATH
+
+#### Verify Installation
+After installation, verify both tools are accessible:
+```bash
+pdftoppm -v
+tesseract --version
+```
+
+**Optional Language Packs:**
+For OCR support in languages other than English:
+```bash
+# Linux/WSL
+sudo apt-get install tesseract-ocr-[language-code]
+
+# macOS
+brew install tesseract-lang
+
+# Examples: tesseract-ocr-spa (Spanish), tesseract-ocr-fra (French)
+```
 
 ## Setup
 
@@ -97,9 +180,7 @@ The magic is that Claude 3.7 Sonnet is trained to understand when and how to use
 
 ## Learn More
 
-This project is based on the excellent tutorial: [How to Build an Agent](https://ampcode.com/notes/how-to-build-an-agent)
-
-The tutorial demonstrates that building a powerful AI agent doesn't require complex architectures or secret techniques—just an LLM, a loop, and the right tools.
+If you are curious about building agents, start with [How to Build an Agent](https://ampcode.com/notes/how-to-build-an-agent). It walks through the concepts clearly. But if you just want a quick out-of-the-box coding agent, use this repo.
 
 ## License
 
