@@ -125,6 +125,10 @@ cd Go-code-editing-agent
 ```bash
 export ANTHROPIC_API_KEY="your-api-key-here"
 ```
+PowerShell
+```bash
+$env:ANTHROPIC_API_KEY = "your-api-key-here"
+```
 
 3. Install dependencies:
 ```bash
